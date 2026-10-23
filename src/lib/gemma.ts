@@ -13,6 +13,30 @@ export const GEMINI_BASE_URL =
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemma-4-31b-it';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 500;
+
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt += 1) {
+    let response: Response | undefined;
+
+    try {
+      response = await fetch(url, init);
+    } catch (error) {
+      const retryableNetworkError =
+        error instanceof TypeError || (error instanceof DOMException && error.name === 'TimeoutError');
+      if (!retryableNetworkError || attempt >= MAX_RETRIES) throw error;
+    }
+
+    if (response) {
+      const retryableStatus = response.status === 429 || response.status >= 500;
+      if (response.ok || !retryableStatus || attempt >= MAX_RETRIES) return response;
+      await response.clone().text().catch(() => '');
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * 2 ** attempt));
+  }
+}
 
 export interface GeminiMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -121,7 +145,7 @@ export async function callGemma(args: CallArgs): Promise<GeminiResult> {
   }
 
   try {
-    const res = await fetch(`${GEMINI_BASE_URL}chat/completions`, {
+    const res = await fetchWithRetry(`${GEMINI_BASE_URL}chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
