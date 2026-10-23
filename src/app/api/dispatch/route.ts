@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireRole, ok, fail, zodMessage } from '@/lib/api';
-import { rankDrivers, GEMINI_MODEL, type DriverCandidate } from '@/lib/gemma';
+import type { DriverCandidate } from '@/lib/gemma';
 import { estimateDistanceKm } from '@/lib/fare';
 
 const DispatchSchema = z.object({
@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
     where: {
       role: 'DRIVER',
       vehicles: { some: { capacity: { gte: passengers } } },
+      ridesAsDriver: { none: { status: { in: ['MATCHED', 'IN_PROGRESS'] } } },
     },
     include: {
       vehicles: true,
@@ -57,10 +58,12 @@ export async function POST(req: NextRequest) {
     const onShift = d.availability.some(
       (a) => a.dayOfWeek === day && minutes >= a.startTime && minutes <= a.endTime
     );
+    if (!onShift) continue;
+
     const homeLoc = d.hostel
       ? await prisma.campusLocation.findFirst({ where: { name: { contains: d.hostel } } })
       : null;
-    const distanceKm = pickupLoc && homeLoc ? estimateDistanceKm(homeLoc, pickupLoc) : 2 + Math.random() * 2;
+    const distanceKm = pickupLoc && homeLoc ? estimateDistanceKm(homeLoc, pickupLoc) : 2;
 
     candidates.push({
       id: d.id,
@@ -76,34 +79,23 @@ export async function POST(req: NextRequest) {
   }
 
   if (candidates.length === 0) {
-    return ok({ candidates: [], ai: null, message: 'No drivers with enough capacity are online right now.' });
+    return ok({
+      candidates: [],
+      ai: null,
+      message: 'No drivers are available for this ride right now. You can still request the ride and try again later.',
+    });
   }
 
-  const { ranking, meta } = await rankDrivers({ pickup, destination, passengers, drivers: candidates });
-
-  const ordered = ranking
-    .map((r) => {
-      const c = candidates.find((d) => d.id === r.driverId);
-      return c ? { ...c, reason: r.reason } : null;
-    })
-    .filter(Boolean);
-
-  // Include any drivers the model omitted, at the end.
-  for (const c of candidates) {
-    if (!ordered.some((o) => o && o.id === c.id)) {
-      ordered.push({ ...c, reason: 'Available nearby.' });
-    }
-  }
+  const ordered = candidates
+    .sort((a, b) => a.distanceKm - b.distanceKm || b.rating - a.rating || b.capacity - a.capacity)
+    .map((candidate) => ({
+      ...candidate,
+      reason: `On shift, ${candidate.distanceKm} km away, and has room for ${passengers} passenger${passengers === 1 ? '' : 's'}.`,
+    }));
 
   return ok({
     candidates: ordered,
-    ai: {
-      model: GEMINI_MODEL,
-      fallback: meta.fallback,
-      latencyMs: meta.latencyMs,
-      tokensIn: meta.usage?.prompt_tokens ?? null,
-      tokensOut: meta.usage?.completion_tokens ?? null,
-    },
+    ai: null,
     context: { pickup, destination, passengers },
   });
 }

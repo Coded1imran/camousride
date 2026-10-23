@@ -90,6 +90,7 @@ export function BookingClient({ riderName }: { riderName: string }) {
   const [ai, setAi] = useState<AiMeta | null>(null);
   const [drivers, setDrivers] = useState<DriverOption[] | null>(null);
   const [dispatchAi, setDispatchAi] = useState<AiMeta | null>(null);
+  const [dispatchMessage, setDispatchMessage] = useState<string | null>(null);
   const [carpool, setCarpool] = useState<CarpoolGroup[]>([]);
   const [understanding, setUnderstanding] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -101,6 +102,7 @@ export function BookingClient({ riderName }: { riderName: string }) {
     setUnderstanding(true);
     setDraft(null);
     setDrivers(null);
+    setDispatchMessage(null);
     setCarpool([]);
     try {
       const res = await fetch("/api/ai/book", {
@@ -143,6 +145,10 @@ export function BookingClient({ riderName }: { riderName: string }) {
       if (dispatchRes.ok) {
         setDrivers(dispatchJson.data.candidates ?? []);
         setDispatchAi(dispatchJson.data.ai ?? null);
+        setDispatchMessage(dispatchJson.data.message ?? null);
+      } else {
+        setDrivers([]);
+        setDispatchMessage(dispatchJson.error ?? "Could not check driver availability.");
       }
       const carpoolJson = await carpoolRes.json();
       if (carpoolRes.ok) setCarpool(carpoolJson.data.groups ?? []);
@@ -167,6 +173,7 @@ export function BookingClient({ riderName }: { riderName: string }) {
           destination: draft.destination,
           passengers: draft.passengers,
           scheduledAt: scheduledAt ?? undefined,
+          driverId,
         }),
       });
       const json = await res.json();
@@ -175,13 +182,6 @@ export function BookingClient({ riderName }: { riderName: string }) {
         return;
       }
       const rideId = json.data.ride.id;
-      if (driverId) {
-        await fetch(`/api/rides/${rideId}/assign`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ driverId }),
-        });
-      }
       router.push(`/rides/${rideId}`);
       router.refresh();
     } catch {
@@ -339,34 +339,41 @@ export function BookingClient({ riderName }: { riderName: string }) {
             </button>
           </div>
 
-          {drivers && drivers.length > 0 && (
+          {drivers !== null && (
             <div className="card mt-5">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="font-semibold text-slate-900">Smart dispatch</h2>
+                <h2 className="font-semibold text-slate-900">Book a driver directly</h2>
                 <AIBadge ai={dispatchAi} />
               </div>
-              <p className="mt-1 text-sm text-slate-500">
-                Ranked by Gemma using distance, capacity, rating and shift hours. Pick one, or let the transport office
-                assign a driver.
-              </p>
-              <ul className="mt-4 space-y-3">
-                {drivers.map((d, i) => (
-                  <li key={d.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900">
-                        {i + 1}. {d.name} · {d.rating.toFixed(1)}★
-                      </p>
-                      <p className="truncate text-xs text-slate-500">
-                        {d.vehicle} · {d.distanceKm} km away · {d.availableNow ? "on shift" : "off shift"}
-                      </p>
-                      <p className="mt-1 text-xs text-emerald-700">{d.reason}</p>
-                    </div>
-                    <button onClick={() => confirm(d.id)} disabled={confirming} className="btn-secondary shrink-0 text-xs">
-                      Choose
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {drivers.length === 0 ? (
+                <p className="mt-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+                  {dispatchMessage ?? "No drivers are available for this ride right now. You can still request the ride and try again later."}
+                </p>
+              ) : (
+                <>
+                  <p className="mt-1 text-sm text-slate-500">
+                    These drivers are on shift, have enough seats, and are not assigned to an active ride.
+                  </p>
+                  <ul className="mt-4 space-y-3">
+                    {drivers.map((d, i) => (
+                      <li key={d.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">
+                            {i + 1}. {d.name} · {d.rating.toFixed(1)}★
+                          </p>
+                          <p className="truncate text-xs text-slate-500">
+                            {d.vehicle} · {d.distanceKm} km away · on shift
+                          </p>
+                          <p className="mt-1 text-xs text-emerald-700">{d.reason}</p>
+                        </div>
+                        <button onClick={() => confirm(d.id)} disabled={confirming} className="btn-secondary shrink-0 text-xs">
+                          {confirming ? "Booking…" : `Book with ${d.name.split(" ")[0]}`}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
           )}
 

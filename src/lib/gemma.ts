@@ -14,10 +14,11 @@ export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemma-4-31b-it';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const MAX_RETRIES = 2;
+const MAX_TIMEOUT_RETRIES = 1;
 const RETRY_DELAY_MS = 500;
 const configuredTimeoutMs = Number(process.env.GEMINI_TIMEOUT_MS);
 const GEMINI_TIMEOUT_MS =
-  Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0 ? configuredTimeoutMs : 60000;
+  Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0 ? configuredTimeoutMs : 120000;
 
 async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
   for (let attempt = 0; ; attempt += 1) {
@@ -26,9 +27,10 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
     try {
       response = await fetch(url, { ...init, signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS) });
     } catch (error) {
-      const retryableNetworkError =
-        error instanceof TypeError || (error instanceof DOMException && error.name === 'TimeoutError');
-      if (!retryableNetworkError || attempt >= MAX_RETRIES) throw error;
+      const timeoutError = error instanceof DOMException && error.name === 'TimeoutError';
+      const retryableNetworkError = error instanceof TypeError || timeoutError;
+      const retryLimit = timeoutError ? MAX_TIMEOUT_RETRIES : MAX_RETRIES;
+      if (!retryableNetworkError || attempt >= retryLimit) throw error;
     }
 
     if (response) {
@@ -317,7 +319,7 @@ export async function createRideFromText(input: {
     messages: [{ role: 'user', content: input.text }],
     tools: [CREATE_RIDE_TOOL],
     toolChoice: 'required',
-    maxTokens: 1024,
+    maxTokens: 512,
     handlers: {
       create_ride: async (args) => {
         const parsed = RideDraftSchema.parse({

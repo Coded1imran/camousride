@@ -14,6 +14,7 @@ const CreateRideSchema = z
     scheduledAt: z.string().max(40).optional(),
     passengers: z.number().int().min(1).max(8).optional(),
     wheelchair: z.boolean().optional(),
+    driverId: z.string().min(1).optional(),
   })
   .refine((v) => Boolean(v.text) || Boolean(v.pickup && v.destination), {
     message: 'Provide free-text or both pickup and destination.',
@@ -97,6 +98,31 @@ export async function POST(req: NextRequest) {
     return fail('Could not understand the pickup and destination. Please add them explicitly.', 422);
   }
 
+  let assignedDriverId: string | null = null;
+  if (parsed.data.driverId) {
+    const now = new Date();
+    const assignedDriver = await prisma.user.findFirst({
+      where: {
+        id: parsed.data.driverId,
+        role: 'DRIVER',
+        vehicles: { some: { capacity: { gte: passengers } } },
+        availability: {
+          some: {
+            dayOfWeek: now.getDay(),
+            startTime: { lte: now.getHours() * 60 + now.getMinutes() },
+            endTime: { gte: now.getHours() * 60 + now.getMinutes() },
+          },
+        },
+        ridesAsDriver: { none: { status: { in: ['MATCHED', 'IN_PROGRESS'] } } },
+      },
+      select: { id: true },
+    });
+    if (!assignedDriver) {
+      return fail('That driver is no longer available. Choose another driver or request an unassigned ride.', 409);
+    }
+    assignedDriverId = assignedDriver.id;
+  }
+
   const pickupLoc = await prisma.campusLocation.findFirst({ where: { name: { contains: pickup } } });
   const destLoc = await prisma.campusLocation.findFirst({ where: { name: { contains: destination } } });
 
@@ -108,6 +134,8 @@ export async function POST(req: NextRequest) {
   const ride = await prisma.ride.create({
     data: {
       riderId: auth.user.id,
+      driverId: assignedDriverId,
+      status: assignedDriverId ? 'MATCHED' : 'REQUESTED',
       pickup,
       destination,
       pickupLat: pickupLoc?.lat ?? null,
@@ -117,8 +145,10 @@ export async function POST(req: NextRequest) {
       passengers,
       scheduledAt,
       fare: fare as never,
-      status: 'REQUESTED',
-      statusHistory: { REQUESTED: new Date().toISOString() },
+      statusHistory: {
+        REQUESTED: new Date().toISOString(),
+        ...(assignedDriverId ? { MATCHED: new Date().toISOString() } : {}),
+      },
     },
     include: {
       rider: { select: { id: true, name: true, phone: true, hostel: true } },

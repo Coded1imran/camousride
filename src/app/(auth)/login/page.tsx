@@ -27,6 +27,13 @@ export default function LoginPage({
         <LoginForm />
       </div>
 
+      <div className="mt-5 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">
+        <p className="font-semibold">Demo student account</p>
+        <p className="mt-1">demo.student@campusride.edu.ng</p>
+        <p>Password: password123</p>
+        <p className="mt-1 text-xs text-emerald-200/80">Run npm run db:seed-demo to add this account and demo drivers without clearing existing data.</p>
+      </div>
+
       <p className="mt-6 text-center text-sm text-slate-400">
         New here?{" "}
         <Link href="/register" className="font-semibold text-emerald-300 hover:text-emerald-200">

@@ -25,6 +25,13 @@ const DRIVERS = [
   { name: "Tunde Bakare", email: "tunde.driver@campusride.edu.ng", department: "Transport Unit", hostel: "Staff Quarters", phone: "0803 111 2222" },
   { name: "Ngozi Eze", email: "ngozi.driver@campusride.edu.ng", department: "Transport Unit", hostel: "Staff Quarters", phone: "0803 333 4444" },
   { name: "Ibrahim Musa", email: "ibrahim.driver@campusride.edu.ng", department: "Transport Unit", hostel: "Staff Quarters", phone: "0803 555 6666" },
+  { name: "Amina Yusuf", email: "amina.driver@campusride.edu.ng", department: "Transport Unit", hostel: "Moremi Hall", phone: "0803 777 1001" },
+  { name: "Chidi Okoro", email: "chidi.driver@campusride.edu.ng", department: "Transport Unit", hostel: "New Hall", phone: "0803 777 1002" },
+  { name: "Bola Adeyemi", email: "bola.driver@campusride.edu.ng", department: "Transport Unit", hostel: "Main Gate", phone: "0803 777 1003" },
+  { name: "Zainab Bello", email: "zainab.driver@campusride.edu.ng", department: "Transport Unit", hostel: "Senate Building", phone: "0803 777 1004" },
+  { name: "Emeka Nwankwo", email: "emeka.driver@campusride.edu.ng", department: "Transport Unit", hostel: "Moremi Hall", phone: "0803 777 1005" },
+  { name: "Folasade James", email: "folasade.driver@campusride.edu.ng", department: "Transport Unit", hostel: "New Hall", phone: "0803 777 1006" },
+  { name: "Musa Abdullahi", email: "musa.driver@campusride.edu.ng", department: "Transport Unit", hostel: "Staff Quarters", phone: "0803 777 1007" },
 ];
 
 const VEHICLES = [
@@ -34,6 +41,13 @@ const VEHICLES = [
   { make: "Kia", model: "Rio", plate: "LAG-556-MN", capacity: 4 },
   { make: "Toyota", model: "Hiace", plate: "LAG-901-ZZ", capacity: 8 },
   { make: "Hyundai", model: "Elantra", plate: "LAG-347-KL", capacity: 4 },
+  { make: "Honda", model: "Accord", plate: "LAG-814-RA", capacity: 4 },
+  { make: "Toyota", model: "Yaris", plate: "LAG-625-JB", capacity: 4 },
+  { make: "Nissan", model: "Quest", plate: "LAG-391-DM", capacity: 6 },
+  { make: "Kia", model: "Cerato", plate: "LAG-742-TK", capacity: 4 },
+  { make: "Toyota", model: "Avensis", plate: "LAG-508-NP", capacity: 4 },
+  { make: "Honda", model: "Odyssey", plate: "LAG-166-VC", capacity: 7 },
+  { make: "Hyundai", model: "Accent", plate: "LAG-933-FS", capacity: 4 },
 ];
 
 const STUDENT_NAMES = [
@@ -67,6 +81,87 @@ function daysAgo(n) {
   d.setDate(d.getDate() - n);
   d.setHours(8 + Math.floor(Math.random() * 13), Math.floor(Math.random() * 60), 0, 0);
   return d;
+}
+
+async function seedDemoAccounts() {
+  console.log("Adding demo accounts without clearing existing data…");
+
+  const passwordHash = await bcrypt.hash("password123", 10);
+  const demoStudent = await prisma.user.upsert({
+    where: { email: "demo.student@campusride.edu.ng" },
+    create: {
+      email: "demo.student@campusride.edu.ng",
+      passwordHash,
+      role: "STUDENT",
+      name: "CampusRide Demo Student",
+      department: "Computer Science",
+      hostel: "Moremi Hall",
+      phone: "0803 000 1000",
+    },
+    update: {
+      passwordHash,
+      role: "STUDENT",
+      name: "CampusRide Demo Student",
+      department: "Computer Science",
+      hostel: "Moremi Hall",
+      phone: "0803 000 1000",
+    },
+  });
+
+  const drivers = [];
+  for (const driverData of DRIVERS) {
+    const driver = await prisma.user.upsert({
+      where: { email: driverData.email },
+      create: { ...driverData, passwordHash, role: "DRIVER" },
+      update: { ...driverData, passwordHash, role: "DRIVER" },
+    });
+    drivers.push(driver);
+  }
+
+  let vehiclesAdded = 0;
+  for (let i = 0; i < drivers.length; i++) {
+    const vehicleData = VEHICLES[i];
+    let plate = vehicleData.plate;
+    let existingVehicle = await prisma.vehicle.findUnique({ where: { plate } });
+    let fallbackIndex = i + 1;
+    while (existingVehicle && existingVehicle.ownerId !== drivers[i].id) {
+      plate = `CR-DEMO-${fallbackIndex++}`;
+      existingVehicle = await prisma.vehicle.findUnique({ where: { plate } });
+    }
+    if (!existingVehicle) {
+      await prisma.vehicle.create({
+        data: { ...vehicleData, plate, ownerId: drivers[i].id },
+      });
+      vehiclesAdded++;
+    }
+  }
+
+  for (const driver of drivers) {
+    for (let day = 0; day <= 6; day++) {
+      const availability = await prisma.driverAvailability.updateMany({
+        where: { driverId: driver.id, dayOfWeek: day },
+        data: { startTime: 0, endTime: 1439 },
+      });
+      if (availability.count === 0) {
+        await prisma.driverAvailability.create({
+          data: { driverId: driver.id, dayOfWeek: day, startTime: 0, endTime: 1439 },
+        });
+      }
+    }
+  }
+
+  for (const location of LOCATIONS) {
+    const existingLocation = await prisma.campusLocation.findFirst({ where: { name: location.name } });
+    if (!existingLocation) await prisma.campusLocation.create({ data: location });
+  }
+
+  console.log("Demo data ready:", {
+    student: demoStudent.email,
+    password: "password123",
+    drivers: drivers.length,
+    vehiclesAdded,
+    existingDataPreserved: true,
+  });
 }
 
 async function main() {
@@ -128,17 +223,29 @@ async function main() {
     students.push(student);
   }
 
+  const demoStudent = await prisma.user.create({
+    data: {
+      email: "demo.student@campusride.edu.ng",
+      passwordHash,
+      role: "STUDENT",
+      name: "CampusRide Demo Student",
+      department: "Computer Science",
+      hostel: "Moremi Hall",
+      phone: "0803 000 1000",
+    },
+  });
+
   await prisma.campusLocation.createMany({ data: LOCATIONS });
 
-  // Driver availability: weekdays + weekend evenings.
+  // Seeded drivers stay available all day so the demo can test direct booking anytime.
   for (const driver of drivers) {
     for (let day = 0; day <= 6; day++) {
       await prisma.driverAvailability.create({
         data: {
           driverId: driver.id,
           dayOfWeek: day,
-          startTime: day === 0 || day === 6 ? 16 * 60 : 7 * 60,
-          endTime: day === 0 || day === 6 ? 23 * 60 : 21 * 60,
+          startTime: 0,
+          endTime: 1439,
         },
       });
     }
@@ -242,17 +349,21 @@ async function main() {
   const counts = {
     admins: 1,
     drivers: drivers.length,
-    students: students.length,
+    students: students.length + 1,
     vehicles: vehicles.length,
     rides: rides.length,
     locations: LOCATIONS.length,
     adminEmail: admin.email,
+    demoStudentEmail: demoStudent.email,
   };
   console.log("Seed complete:", counts);
   console.log("Demo password for every seeded account: password123");
+  console.log("Demo student: demo.student@campusride.edu.ng / password123");
+  console.log("Seeded drivers have all-day availability for direct-booking demos.");
 }
 
-main()
+const runDemoOnly = process.argv.includes("--demo-only");
+(runDemoOnly ? seedDemoAccounts() : main())
   .catch((e) => {
     console.error(e);
     process.exit(1);
