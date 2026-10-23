@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  DRIVER
+  ADMIN
+}
+
+enum RideStatus {
+  REQUESTED
+  MATCHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum SOSStatus {
+  OPEN
+  ACKED
+  RESOLVED
+}
+
+enum IncidentType {
+  SOS
+  FRAUD
+  VEHICLE
+  OTHER
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash String
+  role         Role     @default(STUDENT)
+  name         String
+  phone        String?
+  department   String?
+  hostel       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  vehicles         Vehicle[]
+  availability     DriverAvailability[]
+  ridesAsRider     Ride[]          @relation("Rider")
+  ridesAsDriver    Ride[]          @relation("Driver")
+  ratingsGiven     DriverRating[] @relation("FromUser")
+  ratingsReceived  DriverRating[] @relation("ToUser")
+  sosIncidents     SOSIncident[]
+}
+
+model Vehicle {
+  id        String   @id @default(cuid())
+  ownerId  String
+  owner    User     @relation(fields: [ownerId], references: [id])
+  make     String
+  model    String
+  plate    String   @unique
+  capacity Int
+  photoUrl String?
+  createdAt DateTime @default(now())
+}
+
+model Ride {
+  id            String   @id @default(cuid())
+  riderId       String
+  rider         User     @relation("Rider", fields: [riderId], references: [id])
+  driverId      String?
+  driver        User?    @relation("Driver", fields: [driverId], references: [id])
+  status        RideStatus @default(REQUESTED)
+  poolId        String?
+  pickup        String
+  destination  String
+  pickupLat     Float?
+  pickupLng     Float?
+  destLat       Float?
+  destLng       Float?
+  scheduledAt  DateTime?
+  passengers   Int      @default(1)
+  fare         Json?
+  statusHistory Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ratings      DriverRating[]
+  sosIncidents SOSIncident[]
+  demandEvents DemandEvent[]
+}
+
+model DriverAvailability {
+  id        String @id @default(cuid())
+  driverId String
+  driver   User   @relation(fields: [driverId], references: [id])
+  dayOfWeek Int
+  startTime Int
+  endTime   Int
+}
+
+model DriverRating {
+  id         String   @id @default(cuid())
+  rideId     String
+  ride       Ride     @relation(fields: [rideId], references: [id])
+  fromUserId String
+  fromUser   User     @relation("FromUser", fields: [fromUserId], references: [id])
+  toUserId   String
+  toUser     User     @relation("ToUser", fields: [toUserId], references: [id])
+  score      Int      @default(5)
+  comment    String?
+  createdAt  DateTime @default(now())
+}
+
+model SOSIncident {
+  id         String   @id @default(cuid())
+  rideId     String?
+  ride       Ride?    @relation(fields: [rideId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  type       IncidentType @default(SOS)
+  lat        Float?
+  lng        Float?
+  description String?
+  summary    Json?
+  status     SOSStatus @default(OPEN)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model AICallLog {
+  id           String   @id @default(cuid())
+  tool         String
+  model        String?
+  input        Json?
+  output       Json?
+  latencyMs   Int?
+  tokensIn    Int?
+  tokensOut   Int?
+  status       String   @default("SUCCESS")
+  fallbackUsed Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model CampusLocation {
+  id   String @id @default(cuid())
+  name String
+  zone String
+  kind String
+  lat  Float
+  lng  Float
+}
+
+model DemandEvent {
+  id        String   @id @default(cuid())
+  zone      String
+  hour      Int
+  rideId    String?
+  ride      Ride?    @relation(fields: [rideId], references: [id])
+  createdAt DateTime @default(now())
+}
