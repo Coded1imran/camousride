@@ -10,7 +10,7 @@ import { RideDraftSchema } from './validation/schemas';
 export const GEMINI_BASE_URL =
   process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/';
 
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemma-4';
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemma-4-31b-it';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 

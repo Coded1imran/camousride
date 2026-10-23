@@ -99,7 +99,7 @@ export function ActivityClient() {
                       {log.fallbackUsed ? "fallback" : "live"}
                     </span>
                     <span className="font-semibold text-slate-900">{log.tool}</span>
-                    <span className="text-slate-400">{log.model ?? "gemma-4"}</span>
+                    <span className="text-slate-400">{log.model ?? "gemma-4-31b-it"}</span>
                     <span className="ml-auto text-xs text-slate-500">
                       {log.latencyMs ?? 0} ms · in {log.tokensIn ?? "—"} / out {log.tokensOut ?? "—"} tokens ·{" "}
                       {new Date(log.createdAt).toLocaleTimeString()}
