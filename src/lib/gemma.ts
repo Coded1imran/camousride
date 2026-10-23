@@ -15,13 +15,16 @@ export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemma-4-31b-it';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 500;
+const configuredTimeoutMs = Number(process.env.GEMINI_TIMEOUT_MS);
+const GEMINI_TIMEOUT_MS =
+  Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0 ? configuredTimeoutMs : 60000;
 
 async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
   for (let attempt = 0; ; attempt += 1) {
     let response: Response | undefined;
 
     try {
-      response = await fetch(url, init);
+      response = await fetch(url, { ...init, signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS) });
     } catch (error) {
       const retryableNetworkError =
         error instanceof TypeError || (error instanceof DOMException && error.name === 'TimeoutError');
@@ -157,7 +160,6 @@ export async function callGemma(args: CallArgs): Promise<GeminiResult> {
         ...(args.tools?.length ? { tools: args.tools, tool_choice: args.toolChoice ?? 'auto' } : {}),
         ...(args.maxTokens ? { max_tokens: args.maxTokens } : {}),
       }),
-      signal: AbortSignal.timeout(25000),
     });
 
     if (!res.ok) {
@@ -213,7 +215,12 @@ export async function callGemma(args: CallArgs): Promise<GeminiResult> {
 
     return result;
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'unknown';
+    const message =
+      e instanceof DOMException && e.name === 'TimeoutError'
+        ? `Request timed out after ${GEMINI_TIMEOUT_MS / 1000} seconds.`
+        : e instanceof Error
+          ? e.message
+          : 'unknown';
     return finish({ text: `Gemma call failed: ${message}`, fallback: true });
   }
 }
